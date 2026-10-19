@@ -107,7 +107,7 @@ async def main() -> int:
     check("denylist blocks destructive code", res3.output.startswith("BLOCKED"))
 
     print("\n8) Dead code removed")
-    src = Path("server.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parent / "server.py").read_text(encoding="utf-8")
     check("run_shell gone", "def run_shell" not in src)
     check("no unused shutil import", "import shutil" not in src)
     check("no SmartSupervisor left", "SmartSupervisor" not in src)
