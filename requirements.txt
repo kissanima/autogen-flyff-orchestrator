@@ -1,0 +1,9 @@
+# AutoGen FlyFF Multi-Agent Orchestrator
+autogen-agentchat>=0.7,<0.8
+autogen-ext[mcp,openai]>=0.7,<0.8
+openai>=1.40
+mcp>=1.11.0,<2
+fastapi>=0.115
+uvicorn>=0.30
+websockets>=12
+python-dotenv>=1.0

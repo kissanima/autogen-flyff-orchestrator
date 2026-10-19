@@ -1,0 +1,21 @@
+{
+  "aibh": {
+    "provider": "openai",
+    "base_url": "https://www.aibh.cc/v1",
+    "api_key": "${AIBH_API_KEY}",
+    "models": {
+      "deepseek-v4-pro": {
+        "supports_tool_call": true,
+        "supports_images": false,
+        "supports_reasoning": false,
+        "description": "DeepSeek V4 Pro - strongest reasoning, use for complex agent planning"
+      },
+      "deepseek-v4.1-flash": {
+        "supports_tool_call": true,
+        "supports_images": false,
+        "supports_reasoning": false,
+        "description": "DeepSeek V4.1 Flash - fast/cheap, use for simple steps and high-volume calls"
+      }
+    }
+  }
+}

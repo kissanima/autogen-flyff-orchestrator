@@ -1,0 +1,29 @@
+# --- secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+
+# --- python ---
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- node / mcp ---
+node_modules/
+package-lock.json
+
+# --- logs & runtime ---
+*.log
+logs/
+probe_stdout.txt
+type_probe_out.txt
+mcp_wb_probe.txt
+
+# --- editor / os ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
