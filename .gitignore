@@ -27,3 +27,6 @@ mcp_wb_probe.txt
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- agent workspace internals ---
+.workbuddy-ai/
