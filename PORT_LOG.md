@@ -78,3 +78,12 @@
 - **Live smoke test:** 2 rounds, **3 requests**, 8.1s, stopped on `max_rounds`. Confirms one request per agent turn and that the budget middleware counts exactly.
 - **Next Steps:** real overnight run needs the Unity Editor up (else the shell agent has no MCP tools); then merge to `main`.
 - **Blockers:** None.
+
+## Unity Editor up, MCP verified end to end
+
+- **Status:** DONE. Editor headless on `D:/Flyff source code` (Unity 6000.3.25f1, `-batchmode -nographics`), pipeline on port 7800, MCP exposes **160 tools**.
+- **Note:** `unity status` prints only the header even when the pipeline is up — port 7800 answers `401` and the CLI cannot read it. Do not use `unity status` as the readiness check; probe port 7800 or count MCP tools.
+- **Live run with both servers:** rea 170 + unity 160 attached, 1 request, 17.8 s (vs 8.1 s with MCP off). Coordinator stopped on `max_rounds`.
+- **Cost measurement:** tool schemas are ~19.0k chars (rea) + ~17.9k chars (unity) ≈ **9.2k tokens per request** on every turn. At 4800 requests that is ~44M tokens of pure schema overhead.
+- **Next Steps:** consider per-agent MCP routing (domain → rea only, shell → unity only) to halve the payload; then merge to `main`.
+- **Blockers:** None.
