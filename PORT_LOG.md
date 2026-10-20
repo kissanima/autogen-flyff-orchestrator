@@ -63,3 +63,10 @@
 - **Status:** DONE. `AI_HANDOFF_PROMPT.md` (250 lines) added at repo root.
 - **What it covers:** role briefing, what the project is, hard facts table, architecture diagram, the 9 load-bearing features, 7 invariants, AutoGen 0.7.5 landmines, run/verify commands, current defects (gate bug reproduced, patch verdict + 3 gaps), rules of engagement, first-ten-minutes checklist.
 - **Next Steps:** hand it to the next agent verbatim; it deliberately duplicates `PORT_LOG.md` so a fresh session needs no archaeology.
+## Rewrite on Microsoft Agent Framework (branch maf-rewrite)
+
+- **Status:** DONE — new package `orchestrator/` replaces `autogen_gui/`. 50/50 offline + WS e2e PASSED, 0 API calls. Not yet merged to `main`, not yet run against the real model.
+- **What was done:** MAF 1.22 workflow `seed → domain → coordinator → shell → coordinator` (cycle). Deleted WaitableAgent/[WAIT], IncrementalExecutor, GateAgent and the Supervisor — the typed graph makes all four unnecessary, and scope moved into the tools so a cross-scope write can never be queued (this is the old gate bug, now unrepresentable). Added scoped tools (read/list/write/run_shell/log_progress), destructive screen with token-level `git push` detection, budget+retry as chat middleware, `FileCheckpointStorage`, coordinator stop conditions (complete/budget/stalled/max_rounds/fatal), FastAPI+WS UI, new README/install.ps1/requirements/.env.example.
+- **API facts verified by introspection:** `BaseAgent.run` must be a plain def; `AgentExecutor` emits `AgentExecutorResponse` (strict edge typing); `ctx.send_message(target_id=...)`, returning without sending converges; tools' `.invoke()` returns a list of `Content`; middleware is `async (ChatContext, call_next)`.
+- **Next Steps:** wire `MCPStdioTool` for rea+unity, port the headless `--resume` CLI, run one short live test, then merge to `main`.
+- **Blockers:** None. MAF install downgraded fastapi 0.148→0.141 in the shared venv (harmless).
