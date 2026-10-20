@@ -57,3 +57,9 @@
 - **Gaps found:** (1) `git push` guard bypassable — `subprocess.run(["git","push"])`, `git -c x push`, `git.exe push` all return None; needs a pre-push hook, not regex. (2) `WaitableAgent` still wakes a *finished* agent on every peer message (~1 wasted request/round). (3) `.env.example` missing `MAX_REQUESTS`/`SEGMENT_MESSAGES`/`LLM_TIMEOUT`; UI `max_turns` now ignored (`max_rounds` param unused).
 - **Next Steps:** apply on a branch, add the 3 fixes, re-run both suites.
 - **Blockers:** None. Deps live in `C:\Users\Admin\.workbuddy-ai\binaries\python\envs\default`; set `DEEPSEEK_API_KEY` to any dummy value for offline tests.
+
+## Handoff prompt written
+
+- **Status:** DONE. `AI_HANDOFF_PROMPT.md` (250 lines) added at repo root.
+- **What it covers:** role briefing, what the project is, hard facts table, architecture diagram, the 9 load-bearing features, 7 invariants, AutoGen 0.7.5 landmines, run/verify commands, current defects (gate bug reproduced, patch verdict + 3 gaps), rules of engagement, first-ten-minutes checklist.
+- **Next Steps:** hand it to the next agent verbatim; it deliberately duplicates `PORT_LOG.md` so a fresh session needs no archaeology.
