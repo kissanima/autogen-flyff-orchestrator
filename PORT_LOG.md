@@ -37,3 +37,12 @@
 - **Security verification:** 0 secret matches in staged diff; `.env` untracked; no key in any tracked file.
 - **Next Steps:** `git remote add origin <PRIVATE_URL>` then `git push -u origin main`.
 - **Blockers:** Waiting on the repo URL.
+
+## Published to GitHub (private)
+
+- **Status:** DONE — "Setup Packaged, Secured, & Published".
+- **Remote:** `origin` = `https://github.com/kissanima/autogen-flyff-orchestrator.git`. `main` local == `origin/main` (in sync, nothing ahead/behind).
+- **Auth:** no `gh` CLI installed. Git Credential Manager (`credential.helper=manager`) already holds a working credential — `git ls-remote` succeeds non-interactively. No PAT needed.
+- **Re-verified after push:** 15 tracked files, `.env` NOT tracked, secret scan over tracked tree = 0 matches.
+- **Next Steps:** Await user's overnight task prompt; start server with `python -m uvicorn autogen_gui.server:app --port 8765`.
+- **Blockers:** None.
