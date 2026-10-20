@@ -118,3 +118,28 @@
 - **Tests added (7):** `max_rounds=0` is unlimited (60 rounds, 120 routes, no stop), keeps routing,
   runs before the deadline, stops on `deadline`, sends nothing past it, `max_rounds` bounds the
   iteration cap, and the iteration cap scales with the budget.
+
+## Framework re-evaluation: CrewAI (evaluated, rejected)
+
+- **Question:** should the orchestrator move to CrewAI instead of MAF?
+- **Verdict:** no. CrewAI 1.15.28 is a task-centric crew runner; what this project needs is a
+  two-party *cycle* that runs for hours with a deterministic router, which is the one shape Crews
+  are not built for.
+- **What would port cleanly:** the coordinator → a `@router` method (same deterministic Python
+  returning a label); scoped tools and the destructive screen are plain callables either way;
+  MCP is native (`mcps=[MCPServerStdio(...)]` + `tool_filter`, equivalent to our shared/split);
+  `@persist` + `SQLiteFlowPersistence` ≈ `FileCheckpointStorage`; `flow.usage_metrics` is a free
+  token rollup we do not currently have.
+- **What would be lost:** (1) typed edges — MAF rejects `shell -> gate` at `build()` with
+  `TypeCompatibilityError`, CrewAI labels are strings with no build-time check; (2) the
+  `context_filter` seam, which is how cost stays flat across turns; (3) exact request accounting —
+  our middleware counts every HTTP attempt, CrewAI retries inside litellm behind
+  `max_rpm`/`max_iter`/`max_execution_time`, and `max_iter` (a per-task fuse in the 15-25 range)
+  is the same class of limit that made `MAX_ROUNDS=50` useless overnight.
+- **Cycles:** CrewAI documents loops as supported but shows no cycle construct — re-entry is via
+  gated `@start(...)`/router labels. Our cycle is a first-class edge.
+- **Cost to switch:** rewrite `workflow.py` (~330 lines), agent construction in `core.py`, and the
+  FakeAgent-based suite (68 checks); everything else (tools, config, UI, runner) transfers.
+  A night of work for no capability gain, at the price of a 1.x API that is still moving.
+- **If revisiting:** steal only `flow.usage_metrics`-style token accounting — ~40 lines on MAF.
+- **Blockers:** none. Decision stands unless the port stops being about a two-agent cycle.
