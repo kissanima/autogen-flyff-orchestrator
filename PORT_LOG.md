@@ -29,3 +29,11 @@
 - **What changed:** prompts softened to "If you need to know… use your tools" + "do not re-read every turn"; both agents now use `BufferedChatCompletionContext(buffer_size=12)`; `/api/context` returns filename/line-count/KB/preview summaries only (624 bytes); session isolation verified fresh per run.
 - **Next Steps:** Await final task prompt. Monitor per-turn token usage via the UI debug trace.
 - **Blockers:** None. `PORT_LOG_domain.md` is 91.6 KB — never let agents read it whole.
+
+## Packaging & publication
+
+- **Status:** LOCAL REPO READY & SECURED. Awaiting GitHub private repo URL to push.
+- **What was done:** Secrets moved to `.env` only (dotenv); removed the models.json fallback; added `.env.example`, `.gitignore`; `requirements.txt`; `install.ps1` (Python/Node bootstrap, venv, pip, .env setup, launch); `README.md` (features, install, usage, ASCII architecture, security); "📋 Copy Chat" button with timestamped export. Server now importable as `autogen_gui.server`. verify_offline.py 33/33 PASSED.
+- **Security verification:** 0 secret matches in staged diff; `.env` untracked; no key in any tracked file.
+- **Next Steps:** `git remote add origin <PRIVATE_URL>` then `git push -u origin main`.
+- **Blockers:** Waiting on the repo URL.
