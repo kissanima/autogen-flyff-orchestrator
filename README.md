@@ -1,204 +1,186 @@
-# AutoGen FlyFF Multi-Agent Orchestrator
+# FlyFF Multi-Agent Orchestrator
 
-A specialized, fully autonomous multi-agent system built on **AutoGen 0.7** that drives
-long-running software engineering work on a large codebase. It was built for the
-FlyFF → Unity 6 / FishNet port, but the architecture is project-agnostic.
+An autonomous, overnight coding orchestrator built on the **Microsoft Agent Framework (MAF 1.x)**.
+Two specialised agents work in parallel on different directories of a large C++ → C#/Unity port
+(FlyFF → Unity 6 / FishNet), while a deterministic coordinator routes their turns and enforces
+scope at the tool boundary.
 
-Two specialised coding agents work in parallel, a deterministic **GateAgent** enforces
-directory ownership at the code-execution boundary, and an **Executor** runs the shell
-commands and test suites they produce. Optional MCP servers expose reverse-engineering
-and Unity Editor tooling to both agents.
+This repository is the **orchestrator**, not the game. The agents edit a separate Unity project
+(default `D:\Flyff source code`, override with `FLYFF_PROJECT_ROOT`).
 
----
-
-## Purpose
-
-Autonomous agents fail on large repositories for predictable reasons: they burn the
-context window re-reading logs, they wander into files they do not own, and they
-re-explore the same code every turn. This system addresses each of those directly
-(see *Features*), so a run can proceed unattended for hours within a fixed request
-budget.
+> Rewritten from an AutoGen 0.7.5 implementation. That version is on `main`; this one lives on
+> `maf-rewrite` until it is promoted.
 
 ---
 
-## Features
+## Why MAF
 
-| Feature | What it does |
-|---|---|
-| **Bounded context** | Each agent replays at most `HISTORY_BUFFER` messages per turn, so cost does not grow with turn count. |
-| **GateAgent scope enforcement** | Blocks cross-scope writes (`domain` → `Assets/`, `shell` → `Domain/`) *before* the executor sees them. The executor cannot attribute code blocks to authors, so a dedicated stage is required. |
-| **`[WAIT]` optimisation** | An agent with nothing to do replies `[WAIT]` and its next turn is answered locally — **zero API requests**. Reactivates automatically when the other agent produces work. |
-| **Incremental execution** | Only code blocks newer than the executor's last turn are run, preventing replay of historical commands (`git commit`, builds) every cycle. |
-| **MCP workbenches** | Both agents get both MCP servers (Unity Editor control, REA binary analysis) merged with their local file tools. |
-| **Copy Chat** | One click exports the whole conversation (timestamps + speakers) to the clipboard. |
-| **Live LLM trace** | Optional debug panel showing prompts, replies, tool calls and token usage per call. |
+The AutoGen version worked but carried four workarounds, three of which existed only because a
+group chat broadcasts every message to every participant:
 
----
+| AutoGen workaround | Why it existed | In MAF |
+|---|---|---|
+| `[WAIT]` token + `WaitableAgent` | Round-robin woke agents that had nothing to do | Executors fire only when typed inputs arrive — idle is free by construction |
+| `IncrementalExecutor` | `CodeExecutorAgent` re-extracted the whole thread every turn | Edges carry only new messages |
+| `GateAgent` | Could only annotate the thread; it could not un-queue a blocked code block | Scope is enforced inside the tools, so a cross-scope write never reaches execution |
+| Hand-rolled `Supervisor` checkpoints | No built-in durability | `FileCheckpointStorage` + `checkpoint_id` |
 
-## How to Install
-
-### One-click (recommended)
-
-```powershell
-# Right-click install.ps1 → "Run with PowerShell", or:
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-The script will:
-
-1. Locate Python (installing 3.12 via `winget` if missing).
-2. Locate `npx` (installing Node.js LTS if missing).
-3. Create `venv/` and `pip install -r requirements.txt`.
-4. Create `.env` from `.env.example` (never overwriting an existing key).
-5. Prompt you to fill in your API keys.
-6. Start the server on <http://127.0.0.1:8765>.
-
-### Manual
-
-```powershell
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env      # then edit .env
-.\venv\Scripts\python.exe -m uvicorn autogen_gui.server:app --host 127.0.0.1 --port 8765
-```
-
----
-
-## How to Use
-
-### 1. Configure API keys
-
-Edit `.env`:
-
-```ini
-DEEPSEEK_API_KEY=sk-...            # required
-DEEPSEEK_BASE_URL=https://www.aibh.cc/v1
-DEEPSEEK_PRO_MODEL=deepseek-v4-pro      # Agent A (reasoning)
-DEEPSEEK_FLASH_MODEL=deepseek-v4.1-flash # Agent B (fast)
-FLYFF_PROJECT_ROOT=D:\Flyff source code  # repo the agents may touch
-```
-
-Any OpenAI-compatible endpoint works. `.env` is git-ignored and never read from source
-code — the key exists only in the environment.
-
-### 2. Start the server
-
-The installer starts it for you. Otherwise:
-
-```powershell
-.\venv\Scripts\python.exe -m uvicorn autogen_gui.server:app --host 127.0.0.1 --port 8765
-```
-
-### 3. Open the UI
-
-Browse to <http://127.0.0.1:8765>. The sidebar shows project files (name, size, line
-count) and any open decisions. It never sends file bodies to the model.
-
-### 4. Launch a task
-
-Type the kickoff instruction and press **Run**. The prefilled message assigns backlog
-items to each agent. Watch messages stream as chat bubbles: **Agent A** left/blue,
-**Agent B** right/green, **Executor** and **Gate** centred grey.
-
-- **Show debug** — reveals per-call LLM traces (prompts, replies, tokens).
-- **Copy Chat** — exports the transcript with timestamps.
-- **Stop** — cancels the run immediately.
-
-### 5. Optional: Unity MCP
-
-Unity MCP is a *proxy* to a running Editor and requires the pipeline package:
-
-```powershell
-unity pipeline install --project-path "D:\Flyff source code"
-# restart the Editor afterwards — the package only loads at boot
-unity status            # expect: <port>  ready  <project>
-```
-
-Without a running Editor the Unity server connects but exposes **0 tools** (silently).
+It also fixed a real defect: the old gate inspected `messages[-1]`, and because the turn order was
+`domain → shell → gate`, it never saw the domain agent's output. A domain write to `Assets/` passed
+the gate and was executed. That failure mode does not exist here — `write_file` refuses writes
+outside the calling agent's scope.
 
 ---
 
 ## Architecture
 
 ```
-                        ┌─────────────────────────────┐
-   user task ──────────▶│  RoundRobinGroupChat        │
-                        └──────────────┬──────────────┘
-                                       │  turns cycle A → B → Gate → Executor
-              ┌────────────────────────┼────────────────────────┐
-              ▼                        ▼                        ▼
-     ┌────────────────┐      ┌────────────────┐        ┌──────────────────┐
-     │ Agent A        │      │ Agent B        │        │ GateAgent        │
-     │ "domain"       │      │ "shell"        │        │ (no model)       │
-     │ pro model      │      │ flash model    │        │ scope check      │
-     │ owns Domain/   │      │ owns Assets/   │        │ blocks cross-    │
-     │      Tools/    │      │  Server/ Client│        │ scope writes     │
-     └───────┬────────┘      └───────┬────────┘        └────────┬─────────┘
-             │                       │                          │
-             │  workbench:           │  workbench:              │ pass
-             │  file tools +         │  file tools +            ▼
-             │  REA MCP + Unity MCP  │  REA MCP + Unity MCP  ┌──────────────────┐
-             └───────────┬───────────┘                       │ Executor         │
-                         │  ```python / ```sh blocks         │ (no model)       │
-                         └──────────────────────────────────▶│ runs commands,   │
-                                                              │ returns raw      │
-                                                              │ output to agents │
-                                                              └──────────────────┘
+   seed(task)
+       │
+       ▼
+  ┌─────────┐   AgentExecutorResponse   ┌──────────────┐
+  │ domain  │ ─────────────────────────▶│ coordinator  │
+  │  agent  │                           │  (no model)  │
+  └─────────┘                           └──────┬───────┘
+       ▲                                       │
+       │                                       ▼
+  ┌─────────┐                           ┌──────────────┐
+  │  shell  │◀──────────────────────────│  routes to   │
+  │  agent  │                           │  the other   │
+  └─────────┘                           │  agent, or   │
+                                        │  stops, which│
+                                        │  converges   │
+                                        └──────────────┘
 ```
 
-**Flow:** an agent writes code (a file write via its scoped tool, or a ` ```sh ` block
-for anything else). The Gate inspects the pending message; a cross-scope write is
-refused with `BLOCKED` and never executes. Otherwise the Executor runs only the *new*
-blocks and feeds raw stdout/stderr back into the thread, where the agents fix errors
-on their next turn.
+The coordinator is the only node that decides what happens next. It forwards the response to the
+other agent, or emits nothing, which converges the workflow. Stop reasons: `complete`, `budget`,
+`stalled`, `max_rounds`, `fatal`.
 
-**Termination:** any message containing `OVERNIGHT_COMPLETE` or `BUDGET_EXHAUSTED`, or
-the `max_rounds` cap.
+**Turn data.** Each `AgentExecutorResponse` carries the full conversation with `author_name`
+preserved, so any node can attribute a message to its author — the thing AutoGen could not do.
 
 ---
 
-## Project layout
+## Features
+
+| Feature | How |
+|---|---|
+| **Scoped writes** | `write_file` refuses any path outside the agent's scope; `run_shell` screens cross-scope redirects and `cp`/`mv` destinations |
+| **Destructive-command screen** | Regex + token screen for `git push` (including `subprocess.run(["git","push"])`), `reset --hard`, `clean -fdx`, recursive deletes outside `obj/bin/Temp`, disk and power commands |
+| **Bounded context** | `context_mode="custom"` + `context_filter`: the task message plus the last `HISTORY_BUFFER` messages, so cost does not grow with turn count |
+| **Request budget** | Chat middleware counts every attempt (retries included) and refuses past `MAX_REQUESTS` |
+| **Retry with backoff** | Same middleware: transient errors retried 6×, auth errors fail fast after 3, every attempt counted |
+| **Checkpoint / resume** | `FileCheckpointStorage` per run; `resume` restores the last checkpoint |
+| **Progress notes** | `log_progress` appends to `PORT_LOG_<agent>.md` in the target repo so a restart can pick up |
+| **Chat UI** | Bubbles with timestamps: domain left/blue, shell right/green, coordinator centred grey; Copy Chat; debug toggle |
+
+---
+
+## Install
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The script finds (or installs) Python 3.12+ and Node.js, creates `venv/`, installs
+`requirements.txt`, copies `.env.example` to `.env` without overwriting an existing one, and starts
+the server.
+
+### Manual
+
+```powershell
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env      # then fill in DEEPSEEK_API_KEY
+.\venv\Scripts\python.exe -m orchestrator.server
+```
+
+Open <http://127.0.0.1:8765>.
+
+---
+
+## Configure
+
+```ini
+DEEPSEEK_API_KEY=sk-...                  # required; read from the environment only
+DEEPSEEK_BASE_URL=https://www.aibh.cc/v1
+DEEPSEEK_PRO_MODEL=deepseek-v4-pro       # domain agent (reasoning)
+DEEPSEEK_FLASH_MODEL=deepseek-v4.1-flash # shell agent (fast)
+FLYFF_PROJECT_ROOT=D:\Flyff source code  # the repo the agents may touch
+
+MAX_REQUESTS=4800    # hard cap (provider limit is 5000)
+MAX_ROUNDS=50
+HISTORY_BUFFER=16
+SHELL_TIMEOUT=600
+```
+
+Any OpenAI-compatible endpoint works: `OpenAIChatCompletionClient(base_url=...)`.
+
+---
+
+## Use
+
+Type a kickoff instruction (or leave it empty for the built-in one) and press **Run**.
+
+- **Show debug** — reveals coordinator notes and per-executor status events.
+- **Copy Chat** — exports the transcript as `[hh:mm:ss] speaker: text`.
+- **Stop** — cancels the run; the checkpoint stays on disk.
+
+Each run writes to `orchestrator/runs/<timestamp>/`: `budget.json`, `coordinator.json`,
+`checkpoints/`, `summary.json`. These are git-ignored.
+
+---
+
+## Verify
+
+```powershell
+$env:DEEPSEEK_API_KEY="sk-offline-verify"   # any dummy value; these make no API calls
+python orchestrator\verify_offline.py       # 50 checks
+python orchestrator\test_ws.py              # end-to-end WebSocket run with fake agents
+```
+
+`verify_offline.py` covers: config, scope enforcement (including the cross-scope case that the old
+gate missed), the destructive-command screen (10 blocked, 5 allowed), the scoped tools, bounded
+context, every coordinator stop condition, a full workflow run with fake agents, checkpoint
+creation, and budget accounting with retries.
+
+`test_ws.py` drives the real FastAPI app over a WebSocket with fake agents: start → bubbles →
+`done`, zero requests.
+
+Live tests cost real requests. Do not run them to check a code change.
+
+---
+
+## Layout
 
 ```
 .
-├── install.ps1              # one-click installer/launcher
+├── orchestrator/
+│   ├── core.py            config, scoped tools, destructive screen, budget middleware
+│   ├── workflow.py        prompts, agents, coordinator, graph, run loop
+│   ├── server.py          FastAPI + WebSocket
+│   ├── index.html         chat UI (no build step)
+│   ├── verify_offline.py  offline suite
+│   └── test_ws.py         WebSocket end-to-end test
+├── install.ps1
 ├── requirements.txt
-├── .env.example             # copy to .env and fill in
-├── .gitignore
-├── autogen_gui/
-│   ├── server.py            # FastAPI + WebSocket backend, agents, tools
-│   ├── index.html           # chat UI
-│   ├── verify_offline.py    # offline test suite (no API calls)
-│   ├── test_e2e.py          # live WebSocket test (spends requests)
-│   └── test_mcp.py          # MCP connectivity probe
-└── README.md
+├── .env.example
+└── verify_models.py       model/tool-calling probe
 ```
 
 ---
 
-## Verification
+## Security
 
-```powershell
-.\venv\Scripts\python.exe autogen_gui\verify_offline.py
-```
-
-Runs 33 checks with **no API calls**: MCP parameter sanity, team composition, scope
-enforcement, gate behaviour, `[WAIT]` economics, incremental execution, denylist, and
-that the context endpoint returns summaries only.
-
----
-
-## Security notes
-
-- API keys live only in `.env` (git-ignored). `server.py` reads them from the
-  environment and refuses to start without one.
-- The Executor runs model-generated code with your full user privileges. A denylist
-  blocks drive-wrecking patterns only — it is **not** a sandbox. Run this on a machine
-  and repository you are willing to let an autonomous agent modify, and keep version
-  control clean so bad changes are recoverable.
-- Scope enforcement protects `Domain/` vs `Assets/` ownership between agents; it does
-  not protect against deliberate bypass via an arbitrary shell command we did not
-  pattern-match.
+- API keys live only in `.env` (git-ignored). `core.resolve_api_key()` raises if it is missing.
+- **This is not a sandbox.** `run_shell` executes commands with your privileges. The screen blocks
+  known-destructive patterns, including token-level `git push` detection, but an agent that
+  constructs a command cleverly can still get through. Run it on a machine and repository you are
+  willing to let an autonomous agent modify, and keep version control clean.
+- Scope enforcement covers file writes and shell redirects. MCP tools (Unity, rea) are **not**
+  scope-checked — a Unity MCP call can touch `Assets/` regardless of which agent made it.
+- Agents commit locally; `git push` is refused. Push by hand after reviewing.
 
 ---
 

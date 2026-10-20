@@ -1,10 +1,10 @@
-# AutoGen FlyFF Multi-Agent Orchestrator installer/launcher
+# FlyFF Multi-Agent Orchestrator (Microsoft Agent Framework) installer/launcher
 # Right-click -> Run with PowerShell, or: powershell -ExecutionPolicy Bypass -File .\install.ps1
 $ErrorActionPreference = 'Stop'
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectDir
 
-Write-Host "`n=== AutoGen FlyFF Multi-Agent Orchestrator ===" -ForegroundColor Cyan
+Write-Host "`n=== FlyFF Orchestrator (Microsoft Agent Framework) ===" -ForegroundColor Cyan
 
 # Find Python; if missing, install with winget.
 $Python = Get-Command python -ErrorAction SilentlyContinue
@@ -74,5 +74,5 @@ Get-Content $EnvPath | ForEach-Object {
     }
 }
 $env:PYTHONPATH = $ProjectDir
-Write-Host "Starting AutoGen GUI at http://127.0.0.1:8765 ..." -ForegroundColor Green
-& $VenvPython -m uvicorn autogen_gui.server:app --host 127.0.0.1 --port 8765
+Write-Host "Starting the orchestrator at http://127.0.0.1:8765 ..." -ForegroundColor Green
+& $VenvPython -m orchestrator.server

@@ -30,3 +30,8 @@ Thumbs.db
 
 # --- agent workspace internals ---
 .workbuddy-ai/
+
+# --- MAF runs: transcripts, checkpoints, budget counters ---
+orchestrator/runs/
+runs/
+.pipwork/
