@@ -146,6 +146,28 @@ async def main() -> int:
         check("unknown server is ignored", core.make_mcp_tools() == [])
     finally:
         core.MCP_ENABLED = saved
+    class _T:
+        def __init__(self, n):
+            self.name = n
+
+    fake_mcp = [_T("rea"), _T("unity")]
+    saved_routing = core.MCP_ROUTING
+    try:
+        core.MCP_ROUTING = "shared"
+        check("shared routing gives both servers to both agents",
+              [t.name for t in workflow.mcp_tools_for("domain", fake_mcp)] == ["rea", "unity"]
+              and [t.name for t in workflow.mcp_tools_for("shell", fake_mcp)] == ["rea", "unity"])
+        core.MCP_ROUTING = "split"
+        check("split routing: domain gets rea only",
+              [t.name for t in workflow.mcp_tools_for("domain", fake_mcp)] == ["rea"])
+        check("split routing: shell gets unity only",
+              [t.name for t in workflow.mcp_tools_for("shell", fake_mcp)] == ["unity"])
+        check("split routing tolerates no MCP at all",
+              workflow.mcp_tools_for("domain", None) == [])
+    finally:
+        core.MCP_ROUTING = saved_routing
+    check("default routing preserves the old behaviour", core.MCP_ROUTING == "shared",
+          core.MCP_ROUTING)
     check("rea uses npx", core.MCP_SERVERS["rea"]["command"] == "npx")
     check("request timeout is generous enough for npx cold start",
           core.MCP_TIMEOUT >= 30, str(core.MCP_TIMEOUT))

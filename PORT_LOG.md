@@ -87,3 +87,9 @@
 - **Cost measurement:** tool schemas are ~19.0k chars (rea) + ~17.9k chars (unity) ≈ **9.2k tokens per request** on every turn. At 4800 requests that is ~44M tokens of pure schema overhead.
 - **Next Steps:** consider per-agent MCP routing (domain → rea only, shell → unity only) to halve the payload; then merge to `main`.
 - **Blockers:** None.
+
+## Per-agent MCP routing (opt-in)
+
+- **Status:** DONE. `MCP_ROUTING=shared|split`; default `shared` keeps the old behaviour. `split` gives domain→rea, shell→unity.
+- **Measured (1 round, 1 request each):** shared 17.8s vs split 15.4s wall — but ~9s of that is MCP startup, so the per-request delta is roughly 8.8s → 6.4s. Schema payload drops from ~9.2k to ~4.8k tokens per request.
+- **Tests:** offline suite now 61 checks (5 new routing checks). WS e2e still green.

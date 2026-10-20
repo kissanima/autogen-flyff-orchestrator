@@ -196,6 +196,15 @@ class Coordinator(Executor):
 # Build
 # --------------------------------------------------------------------------
 
+def mcp_tools_for(agent: str, mcp_tools: list[Any] | None) -> list[Any]:
+    """Which MCP servers this agent gets. Shared by default; split on request."""
+    tools = list(mcp_tools or [])
+    if core.MCP_ROUTING != "split":
+        return tools
+    allowed = core.AGENT_MCP.get(agent, ())
+    return [t for t in tools if getattr(t, "name", "") in allowed]
+
+
 def build_agents(budget: core.Budget, on_event=None,
                  mcp_tools: list[Any] | None = None) -> dict[str, Agent]:
     key = core.resolve_api_key()
@@ -206,7 +215,7 @@ def build_agents(budget: core.Budget, on_event=None,
             model=core.MODELS[name], api_key=key, base_url=core.BASE_URL,
             middleware=middleware,
         )
-        tools = core.make_tools(name) + list(mcp_tools or [])
+        tools = core.make_tools(name) + mcp_tools_for(name, mcp_tools)
         return Agent(client=client, instructions=instructions, name=name,
                      description=f"{name} agent", tools=tools)
 

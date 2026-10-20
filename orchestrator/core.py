@@ -52,6 +52,12 @@ RUNS_DIR = WORKSPACE / "runs"
 # otherwise it connects and exposes zero tools.
 MCP_TIMEOUT = int(os.getenv("MCP_TIMEOUT", "60"))
 MCP_ENABLED = os.getenv("MCP_SERVERS", "rea,unity")
+# "shared" = both servers to both agents (the old behaviour).
+# "split"  = each agent only gets the server it actually needs, which halves the
+#            tool-schema payload per request (measured ~9.2k tokens when shared).
+MCP_ROUTING = os.getenv("MCP_ROUTING", "shared")
+AGENT_MCP: dict[str, tuple[str, ...]] = {"domain": ("rea",), "shell": ("unity",)}
+
 MCP_SERVERS: dict[str, dict[str, Any]] = {
     "rea": {"command": "npx", "args": ["-y", "rea-agents@6.4.0", "mcp"]},
     "unity": {"command": "unity", "args": ["mcp", "--project-path", str(PROJECT_ROOT)]},
