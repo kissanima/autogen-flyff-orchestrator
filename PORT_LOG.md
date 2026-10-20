@@ -46,3 +46,14 @@
 - **Re-verified after push:** 15 tracked files, `.env` NOT tracked, secret scan over tracked tree = 0 matches.
 - **Next Steps:** Await user's overnight task prompt; start server with `python -m uvicorn autogen_gui.server:app --port 8765`.
 - **Blockers:** None.
+
+## Review: Claude's unattended-mode patch
+
+- **Status:** DONE (review only) — patch NOT applied to this repo.
+- **Source:** `C:\Users\Admin\WorkBuddy AI\Claude patch\` (`unattended-mode.patch` + `files.zip`, extracted to `Claude patch/review/`).
+- **Verdict:** merge it. +638 lines `autonomy.py`, +143 `overnight.py`, +195 in `server.py`, +443-line test suite. Both suites pass offline (`verify_offline` 39 checks, `verify_unattended` 6 groups). No secrets, no network calls, no eval/exec.
+- **Real bug it fixes (reproduced here):** our `GateAgent` inspects `messages[-1]` only; round-robin order is domain→shell→gate, so the gate always saw *shell's* message and never checked domain's blocks. Reproduced: domain writing `Assets/Hacked.cs` got an empty verdict and the executor ran it. `GuardedExecutor` drops the whole message — same test now executes nothing.
+- **Also fixed:** blocks quoted in the task/tool output no longer run (source filter); destructive screen is ~15 regex patterns vs 13 substrings; executor output clipped to ~7.5k; budget counted per HTTP attempt; retry/backoff; checkpoint+resume; `AllAgentsDone` requires both agents; task message pinned in context.
+- **Gaps found:** (1) `git push` guard bypassable — `subprocess.run(["git","push"])`, `git -c x push`, `git.exe push` all return None; needs a pre-push hook, not regex. (2) `WaitableAgent` still wakes a *finished* agent on every peer message (~1 wasted request/round). (3) `.env.example` missing `MAX_REQUESTS`/`SEGMENT_MESSAGES`/`LLM_TIMEOUT`; UI `max_turns` now ignored (`max_rounds` param unused).
+- **Next Steps:** apply on a branch, add the 3 fixes, re-run both suites.
+- **Blockers:** None. Deps live in `C:\Users\Admin\.workbuddy-ai\binaries\python\envs\default`; set `DEEPSEEK_API_KEY` to any dummy value for offline tests.
