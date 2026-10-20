@@ -76,20 +76,26 @@ Budget(limit: int = MAX_REQUESTS, used: int = 0, path: Path | None = None)
     .used, .limit, .exhausted, .fatal, .remaining
 class BudgetExhausted(Exception)
 class FatalModelError(Exception)
-MAX_ROUNDS: int                  # default 50
+MAX_REQUESTS: int                # default 4800 -- the real overnight limit
+MAX_HOURS: float                 # default 8.0 -- wall clock; 0 disables
+MAX_ROUNDS: int                  # default 0 == unlimited (runaway-loop guard only)
 RUNS_DIR: Path                   # orchestrator/runs
 resolve_api_key() -> str         # raises RuntimeError when unset
 
 # orchestrator/workflow.py
 KICKOFF: str
-build_agents(budget, on_event=None) -> dict[str, Agent]
-build_workflow(agents, budget, run_dir, max_rounds) -> (workflow, coordinator, storage)
-async run_workflow(task, *, run_dir, budget, on_event, max_rounds, resume=False) -> dict
-    # dict keys: reason, detail, rounds, done, requests_used, requests_limit, notes
+build_agents(budget, on_event=None, mcp_tools=None) -> dict[str, Agent]
+build_workflow(agents, budget, run_dir, max_rounds=MAX_ROUNDS, max_hours=MAX_HOURS)
+    -> (workflow, coordinator, storage)
+async run_workflow(task, *, run_dir, budget, on_event,
+                   max_rounds=MAX_ROUNDS, max_hours=MAX_HOURS, resume=False) -> dict
+    # dict keys: reason, detail, rounds, done, requests_used, requests_limit,
+    #            deadline_hours, notes
 ```
 
 `run_workflow` is the only entry point you need. It returns a summary dict with `reason` in
-`{complete, budget, stalled, max_rounds, fatal, stopped}`.
+`{complete, budget, fatal, deadline, max_rounds, stalled, stopped}`. Do not add a round cap to
+your runner — pass `max_hours` and let the request budget and the clock do the bounding.
 
 ---
 

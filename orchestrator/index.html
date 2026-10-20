@@ -108,7 +108,9 @@ async function boot() {
   $("models").style.whiteSpace = "pre-line";
   $("scopes").textContent = Object.entries(cfg.scopes).map(([k, v]) => k + " → " + v.join(", ")).join("\n");
   $("scopes").style.whiteSpace = "pre-line";
-  $("budget").textContent = cfg.max_requests + " requests · " + cfg.max_rounds + " rounds max";
+  const rounds = cfg.max_rounds ? cfg.max_rounds + " rounds" : "no round cap";
+  const hours = cfg.max_hours ? cfg.max_hours + "h" : "no deadline";
+  $("budget").textContent = cfg.max_requests + " requests · " + hours + " · " + rounds;
   $("task").placeholder = cfg.kickoff;
   const ctx = await (await fetch("/api/context")).json();
   $("files").innerHTML = (ctx.files || []).slice(0, 18).map(f =>

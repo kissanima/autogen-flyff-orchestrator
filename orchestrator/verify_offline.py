@@ -232,6 +232,33 @@ async def main() -> int:
     await coord5.on_response(resp("domain", "c"), ctx5)
     check("stops at max_rounds", coord5.state.reason == "max_rounds", coord5.state.reason)
 
+    # max_rounds=0 is the overnight default: rounds are a runaway-loop guard, not a
+    # work limit, so a long run must not converge on this condition.
+    coord6 = workflow.Coordinator(["domain", "shell"], core.Budget(limit=999),
+                                  max_rounds=0, clock=lambda: 0.0)
+    ctx6 = Ctx()
+    for _ in range(60):
+        await coord6.on_response(resp("domain", "working"), ctx6)
+        await coord6.on_response(resp("shell", "ok"), ctx6)
+    check("max_rounds=0 is unlimited", coord6.state.reason == "",
+          f"{coord6.state.rounds} rounds, reason={coord6.state.reason!r}")
+    check("max_rounds=0 keeps routing", len(ctx6.sent) == 120, str(len(ctx6.sent)))
+
+    # The wall clock, not the round count, is what ends an overnight run.
+    now = [0.0]
+    coord7 = workflow.Coordinator(["domain", "shell"], core.Budget(limit=999),
+                                  max_rounds=0, max_hours=1.0, clock=lambda: now[0])
+    ctx7 = Ctx()
+    await coord7.on_response(resp("domain", "a"), ctx7)
+    check("keeps going before the deadline",
+          coord7.state.reason == "" and len(ctx7.sent) == 1,
+          f"reason={coord7.state.reason!r} sent={len(ctx7.sent)}")
+    now[0] = 3601.0
+    await coord7.on_response(resp("shell", "b"), ctx7)
+    check("stops at the wall-clock deadline", coord7.state.reason == "deadline",
+          coord7.state.reason)
+    check("no message sent past the deadline", len(ctx7.sent) == 1, str(ctx7.sent))
+
     print("\n8) Full workflow with fake agents")
     run_dir = tmp / "runs" / "test"
     fakes = {"domain": FakeAgent("domain", ["A work", core.DONE_TOKEN + ": A done"]),
@@ -243,6 +270,17 @@ async def main() -> int:
           {e.id for e in wf.get_executors_list()} == {"seed", "domain", "shell",
                                                       "coordinator"},
           str(sorted(e.id for e in wf.get_executors_list())))
+
+    # The graph iteration cap must never be the thing that ends an overnight run. It is
+    # derived from the request budget (4 steps and ~2 requests per round), so a full
+    # 4800-request night gets ~9600 steps -- far more than 8h of real rounds needs.
+    check("max_rounds bounds the iteration cap", wf.max_iterations == 32,
+          str(wf.max_iterations))
+    long_wf, _, _ = workflow.build_workflow(fakes, core.Budget(limit=4800),
+                                            tmp / "runs" / "long", max_rounds=0,
+                                            max_hours=8)
+    check("iteration cap scales with the budget", long_wf.max_iterations == 9616,
+          str(long_wf.max_iterations))
 
     events: list[dict] = []
     async for event in wf.run("do the task", stream=True):

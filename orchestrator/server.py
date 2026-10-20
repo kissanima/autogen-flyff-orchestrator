@@ -44,6 +44,7 @@ async def config() -> dict[str, Any]:
         "history_buffer": core.HISTORY_BUFFER,
         "max_requests": core.MAX_REQUESTS,
         "max_rounds": core.MAX_ROUNDS,
+        "max_hours": core.MAX_HOURS,
         "kickoff": workflow.KICKOFF,
         "framework": "Microsoft Agent Framework",
     }
@@ -115,11 +116,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
             task_text = (incoming.get("task") or workflow.KICKOFF).strip()
             max_rounds = int(incoming.get("max_rounds") or core.MAX_ROUNDS)
+            max_hours = float(incoming.get("max_hours") or core.MAX_HOURS)
             run_dir = core.RUNS_DIR / time.strftime("%Y%m%d-%H%M%S")
             budget = core.Budget(limit=core.MAX_REQUESTS, path=run_dir / "budget.json")
 
             await send({"type": "start", "run_id": run_dir.name,
-                        "max_rounds": max_rounds, "framework": "MAF"})
+                        "max_rounds": max_rounds, "max_hours": max_hours,
+                        "framework": "MAF"})
 
             def emit(payload: dict[str, Any]) -> None:
                 if _run_task is None or _run_task.done():
@@ -130,7 +133,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 try:
                     summary = await workflow.run_workflow(
                         task_text, run_dir=run_dir, budget=budget,
-                        on_event=emit, max_rounds=max_rounds,
+                        on_event=emit, max_rounds=max_rounds, max_hours=max_hours,
                         resume=bool(incoming.get("resume")))
                     await send({"type": "done",
                                 "stop_reason": f"{summary['reason']}: {summary['detail']}",

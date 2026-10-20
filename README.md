@@ -54,8 +54,8 @@ outside the calling agent's scope.
 ```
 
 The coordinator is the only node that decides what happens next. It forwards the response to the
-other agent, or emits nothing, which converges the workflow. Stop reasons: `complete`, `budget`,
-`stalled`, `max_rounds`, `fatal`.
+other agent, or emits nothing, which converges the workflow. Stop reasons, checked in this order:
+`complete`, `budget`, `fatal`, `deadline`, `max_rounds`, `stalled`.
 
 **Turn data.** Each `AgentExecutorResponse` carries the full conversation with `author_name`
 preserved, so any node can attribute a message to its author — the thing AutoGen could not do.
@@ -110,15 +110,32 @@ DEEPSEEK_PRO_MODEL=deepseek-v4-pro       # domain agent (reasoning)
 DEEPSEEK_FLASH_MODEL=deepseek-v4.1-flash # shell agent (fast)
 FLYFF_PROJECT_ROOT=D:\Flyff source code  # the repo the agents may touch
 
-MAX_REQUESTS=4800    # hard cap (provider limit is 5000)
+MAX_REQUESTS=4800      # hard cap (provider limit is 5000)
+MAX_HOURS=8            # wall-clock limit for one run; 0 disables it
+MAX_ROUNDS=0           # 0 = unlimited; rounds only guard against runaway loops
 MCP_SERVERS=rea,unity  # or `rea`, `unity`, or empty to disable
 MCP_ROUTING=shared     # or `split`: domain->rea, shell->unity (halves the payload)
-MAX_ROUNDS=50
 HISTORY_BUFFER=16
 SHELL_TIMEOUT=600
 ```
 
 Any OpenAI-compatible endpoint works: `OpenAIChatCompletionClient(base_url=...)`.
+
+### Running overnight
+
+Three limits are independent, and only the first two are meant to end a real run:
+
+| Limit | Default | What it actually caps |
+|---|---|---|
+| `MAX_REQUESTS` | 4800 | Total HTTP attempts, retries included. At ~2 requests per round this is ~2400 rounds, or well past 8 hours of real work |
+| `MAX_HOURS` | 8 | Wall-clock time since the coordinator started. Whichever of the two is hit first ends the run |
+| `MAX_ROUNDS` | 0 (off) | Nothing, by default. Kept only so a pathological loop can be capped if you ever need it |
+
+The round count is the wrong axis for an unattended run: one round is a single agent turn, so a
+50-round cap is roughly 20 minutes of work, not a night's. `MAX_ROUNDS` is therefore off by
+default and the run is bounded by requests and the clock instead. A stalled run still stops early
+on its own — `idle_limit` (4) consecutive `[WAIT]` rounds converge the workflow without burning
+the whole budget.
 
 ---
 
@@ -139,14 +156,15 @@ Each run writes to `orchestrator/runs/<timestamp>/`: `budget.json`, `coordinator
 
 ```powershell
 $env:DEEPSEEK_API_KEY="sk-offline-verify"   # any dummy value; these make no API calls
-python orchestrator\verify_offline.py       # 50 checks
+python orchestrator\verify_offline.py       # 68 checks
 python orchestrator\test_ws.py              # end-to-end WebSocket run with fake agents
 ```
 
 `verify_offline.py` covers: config, scope enforcement (including the cross-scope case that the old
 gate missed), the destructive-command screen (10 blocked, 5 allowed), the scoped tools, bounded
-context, every coordinator stop condition, a full workflow run with fake agents, checkpoint
-creation, and budget accounting with retries.
+context, every coordinator stop condition (including the wall-clock deadline and `MAX_ROUNDS=0`
+meaning unlimited), a full workflow run with fake agents, checkpoint creation, and budget
+accounting with retries.
 
 `test_ws.py` drives the real FastAPI app over a WebSocket with fake agents: start → bubbles →
 `done`, zero requests.

@@ -93,3 +93,28 @@
 - **Status:** DONE. `MCP_ROUTING=shared|split`; default `shared` keeps the old behaviour. `split` gives domain→rea, shell→unity.
 - **Measured (1 round, 1 request each):** shared 17.8s vs split 15.4s wall — but ~9s of that is MCP startup, so the per-request delta is roughly 8.8s → 6.4s. Schema payload drops from ~9.2k to ~4.8k tokens per request.
 - **Tests:** offline suite now 61 checks (5 new routing checks). WS e2e still green.
+
+## Overnight limits: rounds were the wrong axis
+
+- **Status:** DONE. Offline suite 68/68, WS e2e green.
+- **Problem:** `MAX_ROUNDS=50` cannot carry a night. One round is a single domain turn plus a
+  single shell turn, so 50 rounds is roughly 20 minutes of work — the run would have stopped on
+  its own well before morning.
+- **Fix:** three independent limits, checked in this order: `complete`, `budget`, `fatal`,
+  **`deadline`** (new), `max_rounds`, `stalled`.
+  - `MAX_REQUESTS` 4800 — every HTTP attempt, retries included. ~2 per round ⇒ ~2400 rounds.
+  - `MAX_HOURS` 8 (new) — wall clock from coordinator construction; `0` disables.
+  - `MAX_ROUNDS` 0 (new default) — `0` means unlimited; kept only as a runaway-loop guard.
+- **Second bug found while fixing the first:** `WorkflowBuilder(max_iterations=max(200, (max_rounds
+  or 1000) * 4 + 8))` capped the *graph* at 4008 steps. At ~25 s per round an 8-hour run needs
+  ~4800–5600 steps, so MAF would have raised `WorkflowConvergenceException` around hour 7 — the
+  framework, not the policy, would have ended the night. Now derived from the budget
+  (`2 × limit + 16` ⇒ 9616 steps) and clamped by `4 × max_rounds + 8` only when set.
+- **Wiring:** `Coordinator(max_hours=..., clock=...)` (injectable clock makes the deadline
+  testable without waiting); `build_workflow(..., max_hours)`; `run_workflow(..., max_hours)`;
+  `/api/config` exposes `max_hours`; the UI shows `N requests · Nh · no round cap`.
+- **Docs:** README gained a "Running overnight" table; `.env.example`, `AI_HANDOFF_PROMPT.md`
+  and `COLLABORATOR_PROMPT.md` frozen contract updated (the old signature list was stale).
+- **Tests added (7):** `max_rounds=0` is unlimited (60 rounds, 120 routes, no stop), keeps routing,
+  runs before the deadline, stops on `deadline`, sends nothing past it, `max_rounds` bounds the
+  iteration cap, and the iteration cap scales with the budget.

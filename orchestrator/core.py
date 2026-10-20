@@ -39,7 +39,10 @@ MODELS = {"domain": MODEL_PRO, "shell": MODEL_FLASH}
 
 HISTORY_BUFFER = int(os.getenv("HISTORY_BUFFER", "16"))
 MAX_REQUESTS = int(os.getenv("MAX_REQUESTS", "4800"))
-MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "50"))
+# 0 = unlimited. The request budget and the wall-clock deadline are the real
+# limits for an overnight run; rounds are only a sanity cap against runaway loops.
+MAX_ROUNDS = int(os.getenv("MAX_ROUNDS", "0"))
+MAX_HOURS = float(os.getenv("MAX_HOURS", "8"))
 SHELL_TIMEOUT = int(os.getenv("SHELL_TIMEOUT", "600"))
 MAX_LIST_ENTRIES = 200
 MAX_READ_LINES = 400

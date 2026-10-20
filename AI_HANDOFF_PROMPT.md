@@ -86,7 +86,9 @@ and the root of the old gate bug.
 - `@executor` functions take `(input, ctx: WorkflowContext[Out])`. `ctx.send_message(msg,
   target_id=...)` routes explicitly; **returning without sending converges the workflow**.
 - `WorkflowBuilder(max_iterations=N)` raises `WorkflowConvergenceException` if the graph never
-  converges. Set it to roughly `4 × max_rounds + 8`.
+  converges. It is **not** a work limit and must never end an overnight run: derive it from the
+  request budget (`2 × budget.limit + 16`, since a round is 4 steps and ~2 requests) and clamp it
+  by `4 × max_rounds + 8` only when `max_rounds` is non-zero.
 - Tools are `@tool(name=..., description=...)` on typed functions. `.invoke(...)` returns a **list
   of `Content`**, not a string — use `content.text`.
 - Chat middleware is `async def mw(ctx: ChatContext, call_next) -> None`; the result lands in

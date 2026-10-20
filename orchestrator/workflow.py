@@ -121,12 +121,16 @@ class Coordinator(Executor):
     """Deterministic turn router. No model, no opinions about content beyond routing."""
 
     def __init__(self, agents: list[str], budget: core.Budget, max_rounds: int,
-                 state_path: Path | None = None, idle_limit: int = 4) -> None:
+                 state_path: Path | None = None, idle_limit: int = 4,
+                 max_hours: float = 0.0, clock=time.monotonic) -> None:
         super().__init__("coordinator")
         self.agents = agents
         self.budget = budget
         self.max_rounds = max_rounds
         self.idle_limit = idle_limit
+        self.max_hours = max_hours
+        self._clock = clock
+        self.started_at = clock()
         self.state_path = state_path
         self.state = CoordinatorState()
         if state_path and state_path.exists():
@@ -181,7 +185,10 @@ class Coordinator(Executor):
         if self.budget.fatal:
             self._stop("fatal", self.budget.fatal)
             return
-        if self.state.rounds >= self.max_rounds:
+        if self.max_hours and (self._clock() - self.started_at) >= self.max_hours * 3600:
+            self._stop("deadline", f"{self.max_hours:g}h wall-clock limit reached")
+            return
+        if self.max_rounds and self.state.rounds >= self.max_rounds:
             self._stop("max_rounds", f"{self.state.rounds} rounds")
             return
         if self.state.idle_rounds >= self.idle_limit:
@@ -223,9 +230,11 @@ def build_agents(budget: core.Budget, on_event=None,
 
 
 def build_workflow(agents: dict[str, Agent], budget: core.Budget, run_dir: Path,
-                   max_rounds: int = core.MAX_ROUNDS):
+                   max_rounds: int = core.MAX_ROUNDS,
+                   max_hours: float = core.MAX_HOURS):
     coordinator = Coordinator(["domain", "shell"], budget, max_rounds,
-                              state_path=run_dir / "coordinator.json")
+                              state_path=run_dir / "coordinator.json",
+                              max_hours=max_hours)
 
     def bounded(msgs: list[Message]) -> list[Message]:
         return bound_context(msgs)
@@ -240,8 +249,15 @@ def build_workflow(agents: dict[str, Agent], budget: core.Budget, run_dir: Path,
         await ctx.send_message(Message("user", [task], author_name="user"))
 
     storage = FileCheckpointStorage(run_dir / "checkpoints")
+    # One round is 4 graph steps (domain, coordinator, shell, coordinator) and ~2 requests,
+    # so derive the iteration cap from the request cap. A fixed cap would abort a long
+    # overnight run at max_iterations long before the deadline or the budget was reached.
+    iterations = max(200, budget.limit * 2 + 16)
+    if max_rounds:
+        iterations = min(iterations, max_rounds * 4 + 8)
     builder = (
-        WorkflowBuilder(start_executor=seed, max_iterations=max(8, max_rounds * 4 + 8),
+        WorkflowBuilder(start_executor=seed,
+                        max_iterations=iterations,
                         checkpoint_storage=storage)
         .add_edge(seed, domain)
         .add_edge(domain, coordinator)
@@ -269,6 +285,7 @@ def _event_text(data: Any) -> str:
 
 async def run_workflow(task: str, *, run_dir: Path, budget: core.Budget,
                        on_event, max_rounds: int = core.MAX_ROUNDS,
+                       max_hours: float = core.MAX_HOURS,
                        resume: bool = False) -> dict[str, Any]:
     """Run the workflow, forwarding chat events to `on_event`. Returns a summary."""
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -300,7 +317,8 @@ async def run_workflow(task: str, *, run_dir: Path, budget: core.Budget,
                 note(f"mcp {tool.name} unavailable: {type(exc).__name__}: {str(exc)[:120]}")
 
         agents = build_agents(budget, on_event=note, mcp_tools=connected)
-        workflow, coordinator, _storage = build_workflow(agents, budget, run_dir, max_rounds)
+        workflow, coordinator, _storage = build_workflow(agents, budget, run_dir, max_rounds,
+                                                         max_hours)
 
         checkpoint_id = None
         if resume:
@@ -343,6 +361,7 @@ async def run_workflow(task: str, *, run_dir: Path, budget: core.Budget,
         done = sorted(coordinator.state.done)
     summary = {"reason": reason, "detail": detail, "rounds": rounds,
                "done": done, "requests_used": budget.used,
-               "requests_limit": budget.limit, "notes": notes}
+               "requests_limit": budget.limit, "deadline_hours": max_hours,
+               "notes": notes}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
