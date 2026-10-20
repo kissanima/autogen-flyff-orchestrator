@@ -47,6 +47,38 @@ OUTPUT_HEAD, OUTPUT_TAIL = 1500, 6000
 
 RUNS_DIR = WORKSPACE / "runs"
 
+# MCP servers exposed to both agents. `rea` needs npx (downloads on first use);
+# `unity` is a proxy that needs a running Editor with com.unity.pipeline installed,
+# otherwise it connects and exposes zero tools.
+MCP_TIMEOUT = int(os.getenv("MCP_TIMEOUT", "60"))
+MCP_ENABLED = os.getenv("MCP_SERVERS", "rea,unity")
+MCP_SERVERS: dict[str, dict[str, Any]] = {
+    "rea": {"command": "npx", "args": ["-y", "rea-agents@6.4.0", "mcp"]},
+    "unity": {"command": "unity", "args": ["mcp", "--project-path", str(PROJECT_ROOT)]},
+}
+
+
+def make_mcp_tools() -> list[Any]:
+    """Construct (but do not connect) the configured MCP servers.
+
+    Set MCP_SERVERS=rea (or unity, or empty) to choose. Connection is the caller's
+    job because MCPStdioTool is an async context manager.
+    """
+    from agent_framework import MCPStdioTool
+
+    wanted = [n.strip() for n in MCP_ENABLED.split(",") if n.strip()]
+    tools = []
+    for name in wanted:
+        cfg = MCP_SERVERS.get(name)
+        if not cfg:
+            continue
+        tools.append(MCPStdioTool(
+            name=name, command=cfg["command"], args=list(cfg["args"]),
+            request_timeout=MCP_TIMEOUT, load_prompts=False,
+        ))
+    return tools
+
+
 WAIT_TOKEN = "[WAIT]"
 DONE_TOKEN = "OVERNIGHT_COMPLETE"
 

@@ -18,7 +18,7 @@ from orchestrator import core, server, workflow  # noqa: E402
 from orchestrator.verify_offline import FakeAgent  # noqa: E402
 
 # Fake agents instead of real ones: zero requests.
-workflow.build_agents = lambda budget, on_event=None: {
+workflow.build_agents = lambda budget, on_event=None, mcp_tools=None: {
     "domain": FakeAgent("domain", ["A: ported Dungeons", core.DONE_TOKEN + ": A done"]),
     "shell": FakeAgent("shell", ["B: built UI controllers", core.DONE_TOKEN + ": B done"]),
 }

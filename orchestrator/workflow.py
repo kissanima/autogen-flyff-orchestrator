@@ -12,6 +12,7 @@ impossible by construction rather than blocked by a stage that cannot un-queue i
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass
@@ -195,7 +196,8 @@ class Coordinator(Executor):
 # Build
 # --------------------------------------------------------------------------
 
-def build_agents(budget: core.Budget, on_event=None) -> dict[str, Agent]:
+def build_agents(budget: core.Budget, on_event=None,
+                 mcp_tools: list[Any] | None = None) -> dict[str, Agent]:
     key = core.resolve_api_key()
     middleware = [core.budget_middleware(budget, on_event)]
 
@@ -204,8 +206,9 @@ def build_agents(budget: core.Budget, on_event=None) -> dict[str, Agent]:
             model=core.MODELS[name], api_key=key, base_url=core.BASE_URL,
             middleware=middleware,
         )
+        tools = core.make_tools(name) + list(mcp_tools or [])
         return Agent(client=client, instructions=instructions, name=name,
-                     description=f"{name} agent", tools=core.make_tools(name))
+                     description=f"{name} agent", tools=tools)
 
     return {"domain": make("domain", DOMAIN_PROMPT), "shell": make("shell", SHELL_PROMPT)}
 
@@ -267,39 +270,70 @@ async def run_workflow(task: str, *, run_dir: Path, budget: core.Budget,
         if on_event:
             on_event({"type": "note", "source": "coordinator", "content": message})
 
-    agents = build_agents(budget, note)
-    workflow, coordinator, _storage = build_workflow(agents, budget, run_dir, max_rounds)
-
-    checkpoint_id = None
-    if resume:
-        try:
-            checkpoint_id = await workflow.get_last_checkpoint_id()
-        except Exception:  # noqa: BLE001
-            checkpoint_id = None
-        if checkpoint_id:
-            note(f"resuming from checkpoint {checkpoint_id}")
-
+    # MCP servers are optional and may fail to start (no Editor, no network). A failed
+    # server is dropped with a note; the run continues with the local tools.
+    connected: list[Any] = []
+    coordinator = None
     try:
-        async for event in workflow.run(task, stream=True, checkpoint_id=checkpoint_id):
-            etype = getattr(event, "type", "")
-            source = getattr(event, "executor_id", "") or ""
-            if etype == "executor_invoked":
-                if on_event:
-                    on_event({"type": "status", "source": source, "content": "running"})
-            elif etype == "executor_completed":
-                text = _event_text(event.data)
-                if on_event and text and text != core.WAIT_TOKEN:
-                    on_event({"type": "message", "source": source, "content": text})
-            elif etype == "failed":
-                detail = getattr(event, "data", "")
-                note(f"workflow failed: {detail}")
-    except Exception as exc:  # noqa: BLE001
-        note(f"run ended with {type(exc).__name__}: {exc}")
+        for tool in core.make_mcp_tools():
+            try:
+                await asyncio.wait_for(tool.connect(), timeout=core.MCP_TIMEOUT)
+                functions = getattr(tool, "functions", None) or []
+                connected.append(tool)
+                if functions:
+                    note(f"mcp {tool.name}: {len(functions)} tools")
+                else:
+                    # The Unity proxy connects happily with zero tools when no Editor is
+                    # running or com.unity.pipeline is missing. Say so instead of hiding it.
+                    note(f"mcp {tool.name}: connected but exposes 0 tools - "
+                         f"is the Editor running with com.unity.pipeline installed?")
+            except Exception as exc:  # noqa: BLE001
+                note(f"mcp {tool.name} unavailable: {type(exc).__name__}: {str(exc)[:120]}")
 
-    reason = coordinator.state.reason or ("budget" if budget.exhausted else "stopped")
-    detail = coordinator.state.detail
-    summary = {"reason": reason, "detail": detail, "rounds": coordinator.state.rounds,
-               "done": sorted(coordinator.state.done), "requests_used": budget.used,
+        agents = build_agents(budget, on_event=note, mcp_tools=connected)
+        workflow, coordinator, _storage = build_workflow(agents, budget, run_dir, max_rounds)
+
+        checkpoint_id = None
+        if resume:
+            try:
+                checkpoint_id = await workflow.get_last_checkpoint_id()
+            except Exception:  # noqa: BLE001
+                checkpoint_id = None
+            if checkpoint_id:
+                note(f"resuming from checkpoint {checkpoint_id}")
+
+        try:
+            async for event in workflow.run(task, stream=True, checkpoint_id=checkpoint_id):
+                etype = getattr(event, "type", "")
+                source = getattr(event, "executor_id", "") or ""
+                if etype == "executor_invoked":
+                    if on_event:
+                        on_event({"type": "status", "source": source, "content": "running"})
+                elif etype == "executor_completed":
+                    text = _event_text(event.data)
+                    if on_event and text and text != core.WAIT_TOKEN:
+                        on_event({"type": "message", "source": source, "content": text})
+                elif etype == "failed":
+                    detail = getattr(event, "data", "")
+                    note(f"workflow failed: {detail}")
+        except Exception as exc:  # noqa: BLE001
+            note(f"run ended with {type(exc).__name__}: {exc}")
+    finally:
+        for tool in connected:
+            try:
+                await tool.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    if coordinator is None:
+        reason, detail, rounds, done = "failed", "workflow was never built", 0, []
+    else:
+        reason = coordinator.state.reason or ("budget" if budget.exhausted else "stopped")
+        detail = coordinator.state.detail
+        rounds = coordinator.state.rounds
+        done = sorted(coordinator.state.done)
+    summary = {"reason": reason, "detail": detail, "rounds": rounds,
+               "done": done, "requests_used": budget.used,
                "requests_limit": budget.limit, "notes": notes}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary

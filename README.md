@@ -68,6 +68,7 @@ preserved, so any node can attribute a message to its author — the thing AutoG
 |---|---|
 | **Scoped writes** | `write_file` refuses any path outside the agent's scope; `run_shell` screens cross-scope redirects and `cp`/`mv` destinations |
 | **Destructive-command screen** | Regex + token screen for `git push` (including `subprocess.run(["git","push"])`), `reset --hard`, `clean -fdx`, recursive deletes outside `obj/bin/Temp`, disk and power commands |
+| **MCP tools** | `rea` (170 tools) and `unity` (160) attached to both agents via `MCPStdioTool`; a server that fails to start, or connects with 0 tools, is dropped with a note |
 | **Bounded context** | `context_mode="custom"` + `context_filter`: the task message plus the last `HISTORY_BUFFER` messages, so cost does not grow with turn count |
 | **Request budget** | Chat middleware counts every attempt (retries included) and refuses past `MAX_REQUESTS` |
 | **Retry with backoff** | Same middleware: transient errors retried 6×, auth errors fail fast after 3, every attempt counted |
@@ -110,6 +111,7 @@ DEEPSEEK_FLASH_MODEL=deepseek-v4.1-flash # shell agent (fast)
 FLYFF_PROJECT_ROOT=D:\Flyff source code  # the repo the agents may touch
 
 MAX_REQUESTS=4800    # hard cap (provider limit is 5000)
+MCP_SERVERS=rea,unity  # or `rea`, `unity`, or empty to disable
 MAX_ROUNDS=50
 HISTORY_BUFFER=16
 SHELL_TIMEOUT=600

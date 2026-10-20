@@ -131,7 +131,26 @@ async def main() -> int:
     out = tool_text(await tools["run_shell"].invoke(command="echo hello"))
     check("run_shell executes", "hello" in str(out), str(out)[:40].replace("\n", " "))
 
-    print("\n5) Bounded context")
+    print("\n5) MCP server configuration (constructed, not connected)")
+    saved = core.MCP_ENABLED
+    try:
+        core.MCP_ENABLED = "rea,unity"
+        names = [t.name for t in core.make_mcp_tools()]
+        check("both servers configured", names == ["rea", "unity"], str(names))
+        core.MCP_ENABLED = "rea"
+        check("MCP_SERVERS selects a subset",
+              [t.name for t in core.make_mcp_tools()] == ["rea"])
+        core.MCP_ENABLED = ""
+        check("empty MCP_SERVERS disables MCP", core.make_mcp_tools() == [])
+        core.MCP_ENABLED = "bogus"
+        check("unknown server is ignored", core.make_mcp_tools() == [])
+    finally:
+        core.MCP_ENABLED = saved
+    check("rea uses npx", core.MCP_SERVERS["rea"]["command"] == "npx")
+    check("request timeout is generous enough for npx cold start",
+          core.MCP_TIMEOUT >= 30, str(core.MCP_TIMEOUT))
+
+    print("\n6) Bounded context")
     msgs = [Message("user", ["task"])] + [Message("assistant", [f"m{i}"])
                                           for i in range(40)]
     bounded = workflow.bound_context(msgs, buffer=6)
@@ -139,7 +158,7 @@ async def main() -> int:
     check("window bounded", len(bounded) == 7, str(len(bounded)))
     check("keeps the most recent", bounded[-1].text == "m39")
 
-    print("\n6) Coordinator routing and stop conditions")
+    print("\n7) Coordinator routing and stop conditions")
     from agent_framework import AgentExecutorResponse
 
     def resp(source: str, text: str) -> AgentExecutorResponse:
@@ -191,7 +210,7 @@ async def main() -> int:
     await coord5.on_response(resp("domain", "c"), ctx5)
     check("stops at max_rounds", coord5.state.reason == "max_rounds", coord5.state.reason)
 
-    print("\n7) Full workflow with fake agents")
+    print("\n8) Full workflow with fake agents")
     run_dir = tmp / "runs" / "test"
     fakes = {"domain": FakeAgent("domain", ["A work", core.DONE_TOKEN + ": A done"]),
              "shell": FakeAgent("shell", ["B work", core.DONE_TOKEN + ": B done"])}
@@ -219,7 +238,7 @@ async def main() -> int:
         run_dir / "checkpoints").exists() else []
     check("checkpoints written", len(checkpoints) > 0, str(len(checkpoints)))
 
-    print("\n8) Budget middleware")
+    print("\n9) Budget middleware")
     from agent_framework import ChatContext
 
     b = core.Budget(limit=2)

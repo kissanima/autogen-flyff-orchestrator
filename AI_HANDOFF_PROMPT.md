@@ -118,10 +118,11 @@ there). There is no `venv/` in the repo.
 
 ## 8. Known gaps
 
-- **MCP is not wired.** The AutoGen version attached `rea` (170 tools) and `unity` (160 tools) via
-  `McpWorkbench`. MAF has `MCPStdioTool(name, command, args=..., request_timeout=...)`, which is a
-  drop-in, but it is not connected yet. Add it to `core.make_tools` or to `Agent(tools=[...])`, and
-  remember MCP calls are **not** scope-checked.
+- **MCP is wired but Unity needs the Editor.** `core.make_mcp_tools()` builds `MCPStdioTool`s from
+  `MCP_SERVERS` (default `rea,unity`); `run_workflow` connects them with a timeout and drops any
+  that fail. `rea` exposes 170 tools in ~8 s. `unity` connects in ~1 s with **0 tools** when no
+  Editor is running — that is a silent trap, and it is now reported as a note. MCP calls are
+  **not** scope-checked.
 - **No headless runner.** The old `overnight.py` (git preflight, keep-awake, `--resume`) was not
   ported. `run_workflow(resume=True)` supports checkpoint resume; the CLI wrapper is missing.
 - **Resume is partial.** `Coordinator` persists `rounds` and `done` to `coordinator.json`, but the

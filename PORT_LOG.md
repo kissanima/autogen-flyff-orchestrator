@@ -70,3 +70,11 @@
 - **API facts verified by introspection:** `BaseAgent.run` must be a plain def; `AgentExecutor` emits `AgentExecutorResponse` (strict edge typing); `ctx.send_message(target_id=...)`, returning without sending converges; tools' `.invoke()` returns a list of `Content`; middleware is `async (ChatContext, call_next)`.
 - **Next Steps:** wire `MCPStdioTool` for rea+unity, port the headless `--resume` CLI, run one short live test, then merge to `main`.
 - **Blockers:** None. MAF install downgraded fastapi 0.148→0.141 in the shared venv (harmless).
+
+## MCP wired + first live run (maf-rewrite)
+
+- **Status:** DONE. Offline suite 56/56, WS e2e green, first real-model run PASSED.
+- **MCP:** `core.make_mcp_tools()` builds `MCPStdioTool`s from `MCP_SERVERS` (default `rea,unity`); `run_workflow` connects each with `MCP_TIMEOUT` (60s), drops failures, and warns when a server connects with **0 tools**. Measured: `rea` = 170 tools in 8.0s; `unity` = 0 tools in 1.2s (no Editor running — expected).
+- **Live smoke test:** 2 rounds, **3 requests**, 8.1s, stopped on `max_rounds`. Confirms one request per agent turn and that the budget middleware counts exactly.
+- **Next Steps:** real overnight run needs the Unity Editor up (else the shell agent has no MCP tools); then merge to `main`.
+- **Blockers:** None.
